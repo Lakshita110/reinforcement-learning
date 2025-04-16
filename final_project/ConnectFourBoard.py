@@ -129,7 +129,17 @@ class ConnectFourBoard(gym.Env):
             self.done = True
             self.winner = 0  # Indicate a draw
 
-    def step(self, action):
+    def step(self, action: int):
+        """Take an action in the environment.
+        Args:
+            action (int): The column to drop the piece in.
+        Returns:
+            observation (ObsType): The current state of the board.
+            reward (float): The reward for the action taken.
+            termination (bool): Whether the game is done.
+            truncated (bool): Whether the game is truncated.
+        """
+
         if self.done:
             raise Exception("Game is already done. Please reset.")
 
@@ -141,11 +151,22 @@ class ConnectFourBoard(gym.Env):
 
         self.check_game_done()
 
-        reward = 1 if self.winner == self.current_player else 0
+        # Reward is 1 for winning, -1 for losing, and 0 for draw or ongoing
+        if self.done:
+            if self.winner == 1:
+                reward = 1
+            elif self.winner == -1:
+                reward = -1
+            else:
+                reward = 0
+        else:
+            reward = 0
+
         info = {"winner": self.winner}
         self.render_board()
         self.current_player *= -1
-        return (self.board.copy(), reward, self.done, info)
+
+        return self.board.copy(), reward, self.done, False, info
 
     def get_next_open_row(self, column):
         for r in range(self.rows - 1, -1, -1):
