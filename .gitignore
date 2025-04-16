@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+
+homework_1/results/
+misc/
+*.zip
+*.png
