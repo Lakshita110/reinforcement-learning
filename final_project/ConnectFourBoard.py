@@ -5,12 +5,12 @@ import random
 
 
 class ConnectFourBoard(gym.Env):
-    meta_data = {"render_modes": ["human"], "render_fps": 15}
+    meta_data = {"render_modes": ["human", None], "render_fps": 5}
 
     def __init__(self, render_mode: str = None):
 
         assert (
-            render_mode in self.meta_data["render_modes"] or render_mode is None)
+            render_mode in self.meta_data["render_modes"])
 
         super(ConnectFourBoard, self).__init__()
         self.rows = 6
@@ -21,7 +21,7 @@ class ConnectFourBoard(gym.Env):
             low=-1, high=1, shape=(self.rows, self.columns), dtype=int)
         self.render_mode = render_mode
 
-        self.current_player = 1
+        self.current_player = random.choice([-1, 1])
         self.done = False
         self.winner = None
 
@@ -35,42 +35,22 @@ class ConnectFourBoard(gym.Env):
 
             self.render_board()
 
-    def render_board(self):
-        if self.render_mode != "human":
-            return
+            # If game is done, show message
+            if self.done:
+                if self.winner == 0:
+                    text = self.font.render("Draw!", True, (255, 255, 255))
+                else:
+                    color = "Red" if self.winner == 1 else "Yellow"
+                    text = self.font.render(
+                        f"{color} wins!", True, (255, 255, 255))
+                self.window.blit(text, (10, 10))
 
-        # Fill background with blue for the board
-        self.window.fill((0, 0, 255))
-
-        for r in range(self.rows):
-            for c in range(self.columns):
-                # Draw the board holes
-                pygame.draw.rect(self.window, (0, 0, 255),
-                                 (c * 100, r * 100, 100, 100))
-                color = (0, 0, 0)  # Default to black (empty)
-                if self.board[r][c] == 1:
-                    color = (255, 0, 0)  # Player 1 (red)
-                elif self.board[r][c] == -1:
-                    color = (255, 255, 0)  # Player -1 (yellow)
-                pygame.draw.circle(self.window, color,
-                                   (c * 100 + 50, r * 100 + 50), 40)
-
-        # If game is done, show message
-        if self.done:
-            if self.winner == 0:
-                text = self.font.render("Draw!", True, (255, 255, 255))
-            else:
-                color = "Red" if self.winner == 1 else "Yellow"
-                text = self.font.render(
-                    f"{color} wins!", True, (255, 255, 255))
-            self.window.blit(text, (10, 10))
-
-        pygame.display.flip()
-        self.clock.tick(self.meta_data["render_fps"])
+            pygame.display.flip()
+            self.clock.tick(self.meta_data["render_fps"])
 
     def reset(self):
         self.board = np.zeros((self.rows, self.columns), dtype=int)
-        self.current_player = 1
+        self.current_player = random.choice([-1, 1])
         self.done = False
         self.winner = None
 
@@ -123,7 +103,6 @@ class ConnectFourBoard(gym.Env):
                     self.done = True
                     self.winner = self.current_player
                     return
-
         # Check for a draw
         if all(self.board[0, c] != 0 for c in range(self.columns)):
             self.done = True
@@ -173,3 +152,23 @@ class ConnectFourBoard(gym.Env):
             if self.board[r][column] == 0:
                 return r
         return None
+
+    def render_board(self):
+        if self.render_mode != "human":
+            return
+        
+        # Fill background with blue for the board
+        self.window.fill((0, 0, 255))
+
+        for r in range(self.rows):
+            for c in range(self.columns):
+                # Draw the board holes
+                pygame.draw.rect(self.window, (0, 0, 255),
+                                 (c * 100, r * 100, 100, 100))
+                color = (0, 0, 0)  # Default to black (empty)
+                if self.board[r][c] == 1:
+                    color = (255, 0, 0)  # Player 1 (red)
+                elif self.board[r][c] == -1:
+                    color = (255, 255, 0)  # Player -1 (yellow)
+                pygame.draw.circle(self.window, color,
+                                   (c * 100 + 50, r * 100 + 50), 40)

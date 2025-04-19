@@ -1,65 +1,102 @@
 import numpy as np
-from collections import defaultdict
-import gymnasium as gym
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import random
+from collections import deque
+from tqdm import trange
 
 
-class QLearningAgent:
-
+class DQNAgent:
     def __init__(
         self,
-        env: gym.Env,
-        learning_rate: float,
-        initial_epsilon: float,
-        epsilon_decay: float,
-        final_epsilon: float,
-        discount_factor: float = 0.95,
+        env,
+        lr=1e-3,
+        gamma=0.99,
+        batch_size=64,
+        buffer_size=10000,
+        epsilon_start=1.0,
+        epsilon_end=0.1,
+        epsilon_decay=0.995,
+        target_update_freq=10,
+        device="cpu"
     ):
-
         self.env = env
-        self.q_table = defaultdict(lambda: np.zeros(env.action_space.n))
-
-        self.lr = learning_rate
-        self.discount_factor = discount_factor
-
-        self.epsilon = initial_epsilon
+        self.device = device
+        self.gamma = gamma
+        self.batch_size = batch_size
+        self.epsilon = epsilon_start
+        self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
-        self.final_epsilon = final_epsilon
+        self.target_update_freq = target_update_freq
 
-    def sample_greedy(self, state):
-        return np.random.choice(np.flatnonzero(self.Q[state] == self.Q[state].max()))
+        self.q_net = QNetwork(env.action_space.n).to(device)
+        self.target_net = QNetwork(env.action_space.n).to(device)
+        self.target_net.load_state_dict(self.q_net.state_dict())
+        self.target_net.eval()
 
-    def sample_action(self, state):
+        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
+        self.replay_buffer = deque(maxlen=buffer_size)
+        self.steps = 0
+
+    def select_action(self, state):
         if np.random.rand() < self.epsilon:
-            return np.random.choice(self.env.nA)
+            return random.choice(self.env.get_available_actions())
         else:
-            return self.sample_greedy(state)
+            state_tensor = torch.tensor(
+                state, dtype=torch.float32, device=self.device).unsqueeze(0)
+            q_values = self.q_net(state_tensor).detach().cpu().numpy()[0]
+            valid_actions = self.env.get_available_actions()
+            return max(valid_actions, key=lambda a: q_values[a])
 
-    def decay_epsilon(self, episode):
-        new_epsilon = self.initial_epsilon * (self.epsilon_decay ** episode)
-        self.epsilon = max(self.final_epsilon, new_epsilon)
+    def store_transition(self, state, action, reward, next_state, done):
+        self.replay_buffer.append((state, action, reward, next_state, done))
 
-    def train(self, num_episodes):
-        episode_lengths = []
-        for episode in range(num_episodes):
-            state, _ = self.env.reset()
-            done = False
-            episode_length = 0
+    def update(self):
+        if len(self.replay_buffer) < self.batch_size:
+            return
 
-            while not done:
-                action = self.sample_action(state)
-                next_state, reward, done, _, _ = self.env.step(action)
+        transitions = random.sample(self.replay_buffer, self.batch_size)
+        states, actions, rewards, next_states, dones = zip(*transitions)
 
-                # Update Q-value using the Bellman equation
-                best_next_action = np.argmax(self.q_table[next_state])
-                td_target = reward + self.discount_factor * \
-                    self.q_table[next_state][best_next_action]
-                td_delta = td_target - self.q_table[state][action]
-                self.q_table[state][action] += self.lr * td_delta
+        states = torch.tensor(
+            np.array(states), dtype=torch.float32).to(self.device)
+        actions = torch.tensor(actions).to(self.device)
+        rewards = torch.tensor(rewards).to(self.device)
+        next_states = torch.tensor(
+            np.array(next_states), dtype=torch.float32).to(self.device)
+        dones = torch.tensor(dones, dtype=torch.bool).to(self.device)
 
-                state = next_state
-                episode_length += 1
+        q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze()
+        with torch.no_grad():
+            next_q = self.target_net(next_states).max(1)[0]
+            target_q = rewards + (1 - dones.float()) * self.gamma * next_q
 
-            episode_lengths.append(episode_length)
-            self.decay_epsilon(episode)
+        loss = nn.MSELoss()(q_values, target_q)
 
-        return episode_lengths
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+
+class QNetwork(nn.Module):
+    def __init__(self, n_actions):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 6 * 7, 256),
+            nn.ReLU(),
+            nn.Linear(256, n_actions)
+        )
+
+    def forward(self, x):
+        x = x.unsqueeze(1).float()  # (B, 1, 6, 7)
+        return self.net(x)
+
+
+# Let DQNAgent be exportable
+__all__ = ["DQNAgent"]
