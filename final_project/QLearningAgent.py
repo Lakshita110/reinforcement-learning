@@ -11,6 +11,7 @@ class DQNAgent:
     def __init__(
         self,
         env,
+        network,
         lr=1e-3,
         gamma=0.99,
         batch_size=64,
@@ -29,9 +30,16 @@ class DQNAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         self.target_update_freq = target_update_freq
+        
+        if network == "A":
+            network = QNetworkA
+        elif network == "B":
+            network = QNetworkB
+        else:
+            raise ValueError("Invalid network type. Use 'A' or 'B'.")
 
-        self.q_net = QNetwork(env.action_space.n).to(device)
-        self.target_net = QNetwork(env.action_space.n).to(device)
+        self.q_net = network(env.action_space.n).to(device)
+        self.target_net = network(env.action_space.n).to(device)
         self.target_net.load_state_dict(self.q_net.state_dict())
         self.target_net.eval()
 
@@ -79,24 +87,50 @@ class DQNAgent:
         self.optimizer.step()
 
 
-class QNetwork(nn.Module):
-    def __init__(self, n_actions):
+class QNetworkA(nn.Module):
+    def __init__(self, n_actions=7):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=2),  # (6x7) -> (5x6)
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(64, 64, kernel_size=2),  # (5x6) -> (4x5)
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 6 * 7, 256),
+            nn.Linear(64 * 4 * 5, 64),
             nn.ReLU(),
-            nn.Linear(256, n_actions)
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.Linear(64, n_actions)  # Output 7 Q-values for 7 columns
         )
 
     def forward(self, x):
-        x = x.unsqueeze(1).float()  # (B, 1, 6, 7)
+        x = x.unsqueeze(1).float()  # Input shape: (B, 1, 6, 7)
         return self.net(x)
+    
+    def save_model(self, filename):
+        torch.save(self.state_dict(), filename)
+    
+class QNetworkB(nn.Module):
+    def __init__(self, n_actions=7):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 128, kernel_size=4),  # (6x7) -> (3x4)
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(128 * 3 * 4, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            nn.Linear(64, n_actions)  # Output Q-values for each column
+        )
 
-
+    def forward(self, x):
+        x = x.unsqueeze(1).float()  # Shape: (B, 1, 6, 7)
+        return self.net(x)
+    
+    def save_model(self, filename):
+        torch.save(self.state_dict(), filename)
+        
+    
 # Let DQNAgent be exportable
 __all__ = ["DQNAgent"]
